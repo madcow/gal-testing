@@ -1,0 +1,12 @@
+gal-testing - Tests for grow automation
+Written by Leon Krieg <info@madcow.dev>
+
+# Requirements
+
+- avr-gcc
+- avrdude
+
+# Usage
+
+	make flash
+	make clean
