@@ -5,12 +5,15 @@
 // https://www-user.tu-chemnitz.de/~heha/hsn/chm/ATmegaX8.chm/22.htm
 // https://www.nongnu.org/avr-libc/user-manual/group__util__twi.html
 
+// TODO: Proper testing via serial/display.
+// TODO: Support temperature sensor and RTC.
+// TODO: Remove code redundancies, coding style, etc.
+// TODO: Add documentation.
+
 #include <stdlib.h>
 #include <assert.h>
 #include <avr/io.h>
 #include <util/delay.h>
-
-#define  UNUSED(sym)     (void)(sym)
 
 #define  TW_START        0x08
 #define  TW_REP_START    0x10
@@ -114,13 +117,12 @@ static void I2C_Start(char addr, char mode)
 	if ((TWSR & 0xf8) != TW_START)
 		COM_Error();
 
-	COM_Blink(1);
-
 	// Send slave address
 
-	addr = addr << 1; // Lowest bit for mode
-	TWDR = addr + mode; // Mode: 0=R, 1=W
-	TWCR = (1 << TWINT) | (1 << TWEN);
+	addr = addr << 1;     // Lowest bit for mode
+	TWDR = addr + mode;   // Mode 0=R, 1=W
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT);  // Clear interrupt flag
 
 	// Wait until slave address sent
 
@@ -130,11 +132,6 @@ static void I2C_Start(char addr, char mode)
 	if ((mode == 0 && status != TW_MT_SLA_ACK) ||
 	    (mode == 1 && status != TW_MR_SLA_ACK))
 		COM_Error();
-
-	COM_Blink(1);
-
-	UNUSED(addr);
-	UNUSED(mode);
 }
 
 static void I2C_Stop(void)
