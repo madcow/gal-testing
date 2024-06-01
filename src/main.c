@@ -67,9 +67,10 @@ int main(void)
 
 	// 4. Combine bytes and calculate
 	// TODO: Not sure if this is correct.
+	// NOTE: Yeah should be right... See: (131 * 256 + 144) / 1.2
 	// How to calculate when the data High Byte is "10000011" and
 	// Low Byte is "10010000" (215 + 29 + 28 + 27 + 24) / 1.2 = 28067 lx
-
+	
 	lx = (((unsigned short) hi << 8) | (unsigned char) lo) / 1.2;
 	UNUSED(lx);
 }
