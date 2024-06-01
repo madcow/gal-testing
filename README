@@ -8,5 +8,11 @@ Written by Leon Krieg <info@madcow.dev>
 
 # Usage
 
-	make flash
-	make clean
+    make flash
+    make clean
+
+# Notes
+
+- Light sensor BH1750 is rated for 3.3v not 5v!
+- https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf
+- http://modelleisenbahn-steuern.de/controller/atmega8/16-3-3-adressen-format-atmega8.htm

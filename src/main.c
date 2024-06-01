@@ -4,106 +4,107 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define UNUSED(sym)  (void)(sym)  // Disable -Wunused warnings
-#define BH1750       0x23         // Address of BH1750 light sensor
+#define UNUSED(sym) (void)(sym)
 
-// https://www.nxp.com/docs/en/user-guide/UM10204.pdf
-// https://ez.analog.com/video/w/documents/15352/i2c-protocol-sequence
-
-static void i2c_send(char address, char reg, char data);
-static char i2c_read(char address, char reg);
-static void set_status(int status);
-
-// TODO: Main update loop
-// TODO: Segment displays for feedback
-// TODO: Serial interface (later)
+static void I2C_Init(void);
+static void I2C_Start(char addr, char mode);
+static void I2C_Write(char data);
+static void I2C_Wait_ACK(void);
+static char I2C_Read_ACK(void);
+static char I2C_Read_NOACK(void);
+static void I2C_Stop(void);
 
 int main(void)
 {
-	// Set PB1 as output
-	DDRB |= (1 << DDB1);
+	unsigned short lx;
+	unsigned char hi, lo;
 
-	// BH1750 Light sensor:
-	// - ADDR=GND:     0x23
-	// - ADDR=3.3-5V:  0x5C
+	// Excerpts below are taken from the BH1750FVI datasheet:
+	// https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf
 
-	UNUSED(i2c_send);
-	UNUSED(i2c_read);
+	// TODO: Wait 1us reset term between VCC and DVI power supply? (Page 6)
+	// TODO: What do they mean with "necessary on power supply sequence"?
+	// Asynchronous reset: All registers are reset. It is necessary on
+	// power supply sequence. Please refer "Timing chart for VCC and DVI
+	// power supply sequence". It is power down mode during DVI = 'L'.
 
-	set_status(0);
+	// We recommend to use H-Resolution Mode. Measurement time (integration
+	// time) of H-Resolution Mode is so long that some kind of noise
+	// (including in 50Hz / 60Hz noise) is rejected. And H-Resolution Mode
+	// is 1 lx resolution so that it is suitable for darkness (less than 10
+	// lx) H-resolution mode2 is also suitable to detect for darkness.
+
+	// 00010000 = 1.0 lx resolution, 120ms
+	// 00010001 = 0.5 lx resolution, 120ms
+	// 00100011 = 4.0 lx resolution, 16ms
+
+	I2C_Init();
+
+	// BH1750: Enable continous high resolution mode
+	// ---------------------------------------------
+
+	// 1. Send "Continuous H-resolution mode" instruction
+	// ST | 0100011 | 0 | <ACK> | 00010000 | <ACK> | SP
+
+	I2C_Start(0x23, 0);
+	I2C_Wait_ACK();
+	I2C_Write(0x10);
+	I2C_Wait_ACK();
+	I2C_Stop();
+
+	// 2. Wait 180ms to complete 1st measurement
+
+	_delay_ms(180);
+
+	// 3. Read measurement result
+	// ST | 0100011 | 1 | <ACK> | <HI[15:8]> | ACK | <LO[7:0]> | NOACK | SP
+
+	I2C_Start(0x23, 1);
+	I2C_Wait_ACK();
+	hi = I2C_Read_ACK();
+	lo = I2C_Read_NOACK();
+	I2C_Stop();
+
+	// 4. Combine bytes and calculate
+	// TODO: Not sure if this is correct.
+	// How to calculate when the data High Byte is "10000011" and
+	// Low Byte is "10010000" (215 + 29 + 28 + 27 + 24) / 1.2 = 28067 lx
+
+	lx = (((unsigned short) hi << 8) | (unsigned char) lo) / 1.2;
+	UNUSED(lx);
 }
 
-// TODO: Bail out if NOACK received?
-// TODO: Check for possible errors.
-
-static void i2c_send(char addr, char reg, char data)
+static void I2C_Init(void)
 {
-	TWCR = 0xA4;             // Send start condition
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = addr;             // Set slave address
-	TWCR = 0x84;             // Transmit on I2C port
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = reg;              // Set register address
-	TWCR = 0x84;             // Transmit on I2C port
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = data;             // Set data to be written
-	TWCR = 0x84;             // Transmit on I2C port
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-	TWCR = 0x94;             // Send stop condition
 }
 
-// TODO: Bail out if NOACK received?
-// TODO: Check for possible errors.
-
-static char i2c_read(char address, char reg)
+static void I2C_Start(char addr, char mode)
 {
-	char data = 0;
-
-	TWCR = 0xA4;             // Send start condition
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = address;          // Set slave address
-	TWCR = 0x84;             // Transmit on I2C port
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = reg;              // Set register address
-	TWCR = 0x84;             // Transmit on I2C port
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWCR = 0xA4;             // Send start condition
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	TWDR = address + 1;      // Set address /w read bit
-	TWCR = 0xC4;             // Clear transmit interrupt
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-
-	data = TWDR;             // Load data from register
-	TWCR = 0x84;             // Send No-Acknowledge
-	while (!(TWCR & 0x80));  // Wait for acknowledge
-	TWCR = 0x94;             // Send stop condition
-
-	return data;
+	UNUSED(addr);
+	UNUSED(mode);
 }
 
-static void set_status(int status)
+static void I2C_Wait_ACK(void)
 {
-	// Reset status LED state
-	PORTB &= ~(1 << PORTB1);
+	// Received: Short blink
+	// Bail-out: Keep LED lit
+}
 
-	// Success?
-	if (status == 0) {
-		for (int i = 0; i < 5; i++) {
-			PORTB |= (1 << PORTB1);
-			_delay_ms(200);
-			PORTB &= ~(1 << PORTB1);
-			_delay_ms(200);
-		}
-		return;
-	}
+static char I2C_Read_ACK(void)
+{
+	return 0;
+}
 
-	// Keep LED lit on error
-	PORTB |= (1 << PORTB1);
+static char I2C_Read_NOACK(void)
+{
+	return 0;
+}
+
+static void I2C_Write(char data)
+{
+	UNUSED(data);
+}
+
+static void I2C_Stop(void)
+{
 }
