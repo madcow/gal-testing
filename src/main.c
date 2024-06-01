@@ -10,20 +10,22 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define  UNUSED(sym)      (void)(sym)
+#define  UNUSED(sym)     (void)(sym)
 
 #define  TW_START        0x08
 #define  TW_REP_START    0x10
 #define  TW_MT_SLA_ACK   0x18
-#define  TW_MR_SLA_ACK   0x40
 #define  TW_MT_SLA_NACK  0x20
+#define  TW_MT_DATA_ACK  0x28
+#define  TW_MR_SLA_ACK   0x40
 #define  TW_MR_SLA_NACK  0x48
+#define  TW_MR_DATA_ACK  0x50
 
 static void I2C_Init(void);
 static void I2C_Start(char addr, char mode);
 static void I2C_Stop(void);
 static char I2C_Read_ACK(void);
-static char I2C_Read_NOACK(void);
+static char I2C_Read_NACK(void);
 static void I2C_Write(char data);
 static void I2C_Wait_ACK(void);
 
@@ -58,7 +60,6 @@ int main(void)
 	// ST | 0100011 | 0 | <ACK> | 00010000 | <ACK> | SP
 
 	I2C_Start(0x23, 0);
-	I2C_Wait_ACK();
 	I2C_Write(0x10);
 	I2C_Wait_ACK();
 	I2C_Stop();
@@ -71,9 +72,8 @@ int main(void)
 	// ST | 0100011 | 1 | <ACK> | <HI[15:8]> | ACK | <LO[7:0]> | NOACK | SP
 
 	I2C_Start(0x23, 1);
-	I2C_Wait_ACK();
 	hi = I2C_Read_ACK();
-	lo = I2C_Read_NOACK();
+	lo = I2C_Read_NACK();
 	I2C_Stop();
 
 	// 4. Combine bytes and calculate
@@ -84,7 +84,8 @@ int main(void)
 	// Low Byte is "10010000" (215 + 29 + 28 + 27 + 24) / 1.2 = 28067 lx
 	
 	lx = (((unsigned short) hi << 8) | (unsigned char) lo) / 1.2;
-	UNUSED(lx);
+
+	COM_Blink(lx); // Output lux with LED
 }
 
 static void I2C_Init(void)
@@ -117,7 +118,8 @@ static void I2C_Start(char addr, char mode)
 
 	// Send slave address
 
-	TWDR = addr + mode; // RW mode bit
+	addr = addr << 1; // Lowest bit for mode
+	TWDR = addr + mode; // Mode: 0=R, 1=W
 	TWCR = (1 << TWINT) | (1 << TWEN);
 
 	// Wait until slave address sent
@@ -125,12 +127,9 @@ static void I2C_Start(char addr, char mode)
 	while ((TWCR & (1 << TWINT)) == 0);
 	status = TWSR & 0xF8;
 
-	// if (status == TW_MR_SLA_NACK)
-	//	COM_Blink(5);
-
 	if ((mode == 0 && status != TW_MT_SLA_ACK) ||
 	    (mode == 1 && status != TW_MR_SLA_ACK))
-		COM_Error(); // FIXME: TW_MR_SLA_NACK
+		COM_Error();
 
 	COM_Blink(1);
 
@@ -153,21 +152,55 @@ static void I2C_Stop(void)
 
 static char I2C_Read_ACK(void)
 {
-	return 0;
+	// Read data and acknowledge
+
+	TWCR = (1 << TWEN)   // Enable TWI
+	     | (1 << TWINT)  // Clear interrupt flag
+	     | (1 << TWEA);  // Send acknowledgment
+
+	// Wait until data read
+
+	while ((TWCR & (1 << TWINT)) == 0);
+
+	return TWDR;
 }
 
-static char I2C_Read_NOACK(void)
+static char I2C_Read_NACK(void)
 {
-	return 0;
+	// Read data, expect last byte
+
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT);  // Clear interrupt flag
+
+	// Wait until data read
+
+	while ((TWCR & (1 << TWINT)) == 0);
+
+	return TWDR;
 }
 
 static void I2C_Write(char data)
 {
-	UNUSED(data);
+	TWDR = data;
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT);  // Clear interrupt flag
+
+	while ((TWCR & (1 << TWINT)) == 0);
+
+	if ((TWSR & 0xF8) != TW_MT_DATA_ACK)
+		COM_Error();
 }
 
 static void I2C_Wait_ACK(void)
 {
+	unsigned int status;
+
+	while ((TWCR & (1 << TWINT)) == 0);
+	status = TWSR & 0xF8;
+
+	if (status != TW_MT_DATA_ACK &&
+	    status != TW_MR_DATA_ACK)
+		COM_Error();
 }
 
 static void COM_Blink(unsigned int n)
