@@ -13,6 +13,7 @@ static void I2C_Wait_ACK(void);
 static char I2C_Read_ACK(void);
 static char I2C_Read_NOACK(void);
 static void I2C_Stop(void);
+static void COM_Blink(unsigned int n);
 
 int main(void)
 {
@@ -77,10 +78,25 @@ int main(void)
 
 static void I2C_Init(void)
 {
+	// Set SCL to 400kHz
+
+	TWSR = 0x00;
+	TWBR = 0x0C;
 }
 
 static void I2C_Start(char addr, char mode)
 {
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT)   // Clear interrupt flag
+	     | (1 << TWSTA);  // Send start condition
+
+	// Wait until start condition sent
+	while ((TWCR & (1 << TWINT)) == 0);
+
+	// TODO: Send device address and R/W bit. See section 22.6 at:
+	// https://www-user.tu-chemnitz.de/~heha/hsn/chm/ATmegaX8.chm/22.htm
+	COM_Blink(3);
+
 	UNUSED(addr);
 	UNUSED(mode);
 }
@@ -108,4 +124,25 @@ static void I2C_Write(char data)
 
 static void I2C_Stop(void)
 {
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT)   // Clear interrupt flag
+	     | (1 << TWSTO);  // Send stop condition
+
+	// Wait until stop condition sent
+	while (TWCR & (1 << TWSTO));
+}
+
+static void COM_Blink(unsigned int n)
+{
+	// Set PB1 as output
+	DDRB |= (1 << DDB1);
+
+	_delay_ms(200);
+	while (n > 0) {
+		PORTB |= (1 << PORTB1);
+		_delay_ms(100);
+		PORTB &= ~(1 << PORTB1);
+		_delay_ms(100);
+		n--;
+	}
 }
