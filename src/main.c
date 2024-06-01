@@ -12,12 +12,12 @@
 
 #define  UNUSED(sym)      (void)(sym)
 
-#define  TW_START         0x08
-#define  TW_REP_START     0x10
-#define  TW_MT_SLA_ACK    0x18
-#define  TW_MT_SLA_NACK   0x20
-#define  TW_MT_DATA_ACK   0x28
-#define  TW_MT_DATA_NACK  0x30
+#define  TW_START        0x08
+#define  TW_REP_START    0x10
+#define  TW_MT_SLA_ACK   0x18
+#define  TW_MR_SLA_ACK   0x40
+#define  TW_MT_SLA_NACK  0x20
+#define  TW_MR_SLA_NACK  0x48
 
 static void I2C_Init(void);
 static void I2C_Start(char addr, char mode);
@@ -97,6 +97,8 @@ static void I2C_Init(void)
 
 static void I2C_Start(char addr, char mode)
 {
+	unsigned int status;
+
 	assert(mode == 0 || mode == 1);
 
 	// Send start condition
@@ -121,8 +123,14 @@ static void I2C_Start(char addr, char mode)
 	// Wait until slave address sent
 
 	while ((TWCR & (1 << TWINT)) == 0);
-	if ((TWSR & 0xF8) != TW_MT_SLA_ACK)
-		COM_Error(); // FIXME: TW_MT_SLA_NACK
+	status = TWSR & 0xF8;
+
+	// if (status == TW_MR_SLA_NACK)
+	//	COM_Blink(5);
+
+	if ((mode == 0 && status != TW_MT_SLA_ACK) ||
+	    (mode == 1 && status != TW_MR_SLA_ACK))
+		COM_Error(); // FIXME: TW_MR_SLA_NACK
 
 	COM_Blink(1);
 
