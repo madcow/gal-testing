@@ -1,34 +1,44 @@
 // Basic test for I2C protocol implementation
 // Written by Leon Krieg <info@madcow.dev> 
 
+// https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf
+// https://www-user.tu-chemnitz.de/~heha/hsn/chm/ATmegaX8.chm/22.htm
+// https://www.nongnu.org/avr-libc/user-manual/group__util__twi.html
+
+#include <stdlib.h>
+#include <assert.h>
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define UNUSED(sym) (void)(sym)
+#define  UNUSED(sym)      (void)(sym)
+
+#define  TW_START         0x08
+#define  TW_REP_START     0x10
+#define  TW_MT_SLA_ACK    0x18
+#define  TW_MT_SLA_NACK   0x20
+#define  TW_MT_DATA_ACK   0x28
+#define  TW_MT_DATA_NACK  0x30
 
 static void I2C_Init(void);
 static void I2C_Start(char addr, char mode);
-static void I2C_Write(char data);
-static void I2C_Wait_ACK(void);
+static void I2C_Stop(void);
 static char I2C_Read_ACK(void);
 static char I2C_Read_NOACK(void);
-static void I2C_Stop(void);
+static void I2C_Write(char data);
+static void I2C_Wait_ACK(void);
+
 static void COM_Blink(unsigned int n);
+static void COM_Error(void);
 
 int main(void)
 {
 	unsigned short lx;
 	unsigned char hi, lo;
 
-	// Excerpts below are taken from the BH1750FVI datasheet:
-	// https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf
+	// Uses PB1 for status LED
+	DDRB |= (1 << DDB1);
 
-	// TODO: Wait 1us reset term between VCC and DVI power supply? (Page 6)
-	// TODO: What do they mean with "necessary on power supply sequence"?
-	// Asynchronous reset: All registers are reset. It is necessary on
-	// power supply sequence. Please refer "Timing chart for VCC and DVI
-	// power supply sequence". It is power down mode during DVI = 'L'.
-
+	// https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf:
 	// We recommend to use H-Resolution Mode. Measurement time (integration
 	// time) of H-Resolution Mode is so long that some kind of noise
 	// (including in 50Hz / 60Hz noise) is rejected. And H-Resolution Mode
@@ -69,6 +79,7 @@ int main(void)
 	// 4. Combine bytes and calculate
 	// TODO: Not sure if this is correct.
 	// NOTE: Yeah should be right... See: (131 * 256 + 144) / 1.2
+	// https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf:
 	// How to calculate when the data High Byte is "10000011" and
 	// Low Byte is "10010000" (215 + 29 + 28 + 27 + 24) / 1.2 = 28067 lx
 	
@@ -78,33 +89,58 @@ int main(void)
 
 static void I2C_Init(void)
 {
-	// Set SCL to 400kHz
+	// Set SCL bit rate to 400kHz
 
-	TWSR = 0x00;
-	TWBR = 0x0C;
+	TWSR = 0x00; // TWI status register
+	TWBR = 0x0C; // TWI bit rate register
 }
 
 static void I2C_Start(char addr, char mode)
 {
+	assert(mode == 0 || mode == 1);
+
+	// Send start condition
+
 	TWCR = (1 << TWEN)    // Enable TWI
 	     | (1 << TWINT)   // Clear interrupt flag
 	     | (1 << TWSTA);  // Send start condition
 
 	// Wait until start condition sent
-	while ((TWCR & (1 << TWINT)) == 0);
 
-	// TODO: Send device address and R/W bit. See section 22.6 at:
-	// https://www-user.tu-chemnitz.de/~heha/hsn/chm/ATmegaX8.chm/22.htm
-	COM_Blink(3);
+	while ((TWCR & (1 << TWINT)) == 0);
+	if ((TWSR & 0xf8) != TW_START)
+		COM_Error();
+
+	COM_Blink(1);
+
+	// Send slave address
+
+	TWDR = addr + mode; // RW mode bit
+	TWCR = (1 << TWINT) | (1 << TWEN);
+
+	// Wait until slave address sent
+
+	while ((TWCR & (1 << TWINT)) == 0);
+	if ((TWSR & 0xF8) != TW_MT_SLA_ACK)
+		COM_Error(); // FIXME: TW_MT_SLA_NACK
+
+	COM_Blink(1);
 
 	UNUSED(addr);
 	UNUSED(mode);
 }
 
-static void I2C_Wait_ACK(void)
+static void I2C_Stop(void)
 {
-	// Received: Short blink
-	// Bail-out: Keep LED lit
+	// Send stop condition
+
+	TWCR = (1 << TWEN)    // Enable TWI
+	     | (1 << TWINT)   // Clear interrupt flag
+	     | (1 << TWSTO);  // Send stop condition
+
+	// Wait until stop condition sent
+
+	while (TWCR & (1 << TWSTO));
 }
 
 static char I2C_Read_ACK(void)
@@ -122,21 +158,12 @@ static void I2C_Write(char data)
 	UNUSED(data);
 }
 
-static void I2C_Stop(void)
+static void I2C_Wait_ACK(void)
 {
-	TWCR = (1 << TWEN)    // Enable TWI
-	     | (1 << TWINT)   // Clear interrupt flag
-	     | (1 << TWSTO);  // Send stop condition
-
-	// Wait until stop condition sent
-	while (TWCR & (1 << TWSTO));
 }
 
 static void COM_Blink(unsigned int n)
 {
-	// Set PB1 as output
-	DDRB |= (1 << DDB1);
-
 	_delay_ms(200);
 	while (n > 0) {
 		PORTB |= (1 << PORTB1);
@@ -145,4 +172,13 @@ static void COM_Blink(unsigned int n)
 		_delay_ms(100);
 		n--;
 	}
+}
+
+static void COM_Error(void)
+{
+	// Keep status LED lit
+
+	PORTB |= (1 << PORTB1);
+
+	exit(1);
 }

@@ -12,8 +12,9 @@ Written by Leon Krieg <info@madcow.dev>
     make clean
 
 # Notes
-
 - Light sensor BH1750 is rated for 3.3v not 5v!
+- Wait 1us+ reset term between VCC and DVI power supply? (Page 6)
+- What do they mean with "async reset necessary on power supply sequence"?
 - https://www.mouser.com/datasheet/2/348/bh1750fvi-e-186247.pdf
 - https://www-user.tu-chemnitz.de/~heha/hsn/chm/ATmegaX8.chm/22.htm
 - http://modelleisenbahn-steuern.de/controller/atmega8/16-3-3-adressen-format-atmega8.htm
