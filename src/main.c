@@ -6,8 +6,9 @@
 // https://www.nongnu.org/avr-libc/user-manual/group__util__twi.html
 
 // TODO: Proper testing via serial/display.
+// TODO: Use REP_START for successive calls.
 // TODO: Support temperature sensor and RTC.
-// TODO: Remove code redundancies, coding style, etc.
+// TODO: Remove code redundancies.
 // TODO: Add documentation.
 
 #include <stdlib.h>
